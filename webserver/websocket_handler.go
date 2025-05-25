@@ -1,15 +1,14 @@
-package webserver // Changed package name
+package webserver
 
 import (
 	"log"
 	"net/http"
 
-	"m32osc_controller/main" // To access main.AppServer and main.Subscriber
+	"m32osc_controller/core" // Import core package
 
 	"github.com/gorilla/websocket"
 )
 
-// upgrader remains a package-level variable within webserver
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -18,9 +17,8 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// serveWs returns an http.HandlerFunc that handles WebSocket requests from clients.
-// It now accepts an AppServer instance from the main package.
-func serveWs(app *main.AppServer) http.HandlerFunc {
+// serveWs now accepts *core.AppServer.
+func serveWs(app *core.AppServer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -35,23 +33,22 @@ func serveWs(app *main.AppServer) http.HandlerFunc {
 			conn.Close()
 		}()
 
-		subChan := make(main.Subscriber, 10) // Use main.Subscriber
-		app.Events.Subscribe(subChan)        // app.Events refers to main.AppServer.Events
+		subChan := make(core.Subscriber, 10) // Use core.Subscriber
+		app.Events.Subscribe(subChan)        // app.Events is *core.Publisher
 		log.Printf("WebSocket: Client %s subscribed to FaderEvents.", clientAddr)
 
-		// Goroutine to send fader updates to the client
 		go func() {
 			defer func() {
 				log.Printf("WebSocket: Write loop for client %s ended. Unsubscribing.", clientAddr)
-				app.Events.Unsubscribe(subChan) // Use main.AppServer.Events
+				app.Events.Unsubscribe(subChan) // app.Events is *core.Publisher
 			}()
 
-			for update := range subChan { // update is of type main.FaderUpdate (which is *main.Fader)
+			for update := range subChan { // update is of type core.FaderUpdate (*core.Fader)
 				if update == nil {
 					log.Printf("WebSocket: Received nil update for client %s. Skipping.", clientAddr)
 					continue
 				}
-				err := conn.WriteJSON(update) // update is *main.Fader
+				err := conn.WriteJSON(update) // update is *core.Fader
 				if err != nil {
 					log.Printf("WebSocket: Error writing JSON update to client %s: %v", clientAddr, err)
 					return
@@ -60,11 +57,10 @@ func serveWs(app *main.AppServer) http.HandlerFunc {
 			log.Printf("WebSocket: FaderEvents channel closed for client %s. Write loop exiting.", clientAddr)
 		}()
 
-		// Goroutine to read messages from the client (primarily to detect disconnections)
 		go func() {
 			defer func() {
 				log.Printf("WebSocket: Read loop for client %s ended. Unsubscribing and closing connection.", clientAddr)
-				app.Events.Unsubscribe(subChan) // Use main.AppServer.Events
+				app.Events.Unsubscribe(subChan) // app.Events is *core.Publisher
 				conn.Close()
 			}()
 

@@ -1,4 +1,4 @@
-package main
+package core // Changed package name
 
 // Fader represents a single fader on the M32 console.
 type Fader struct {
