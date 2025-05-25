@@ -94,5 +94,5 @@ func (p *Publisher) Publish(fader *Fader) {
 	}
 }
 
-// FaderEvents is the global publisher instance for fader updates.
-var FaderEvents = NewPublisher()
+// FaderEvents is no longer a global variable.
+// var FaderEvents = NewPublisher()

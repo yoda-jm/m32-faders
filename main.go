@@ -1,61 +1,49 @@
 package main
 
 import (
-	"flag" // Added for command-line flags
+	"flag"
 	"log"
-	"net/http"
-	"path/filepath"
+	// "net/http" // No longer needed directly for ListenAndServe or middleware
+	// "path/filepath" // No longer needed for static file serving here
+	// "github.com/gorilla/mux" // No longer needed for router setup here
 
-	"github.com/gorilla/mux"
+	"m32osc_controller/webserver" // Import the new webserver package
 )
 
-// UpdateFaderRequest and handlers (getFadersHandler, getFaderHandler, updateFaderHandler)
-// have been moved to http_handlers.go
+// Types (Fader, AppServer, Publisher, Subscriber) remain in package main.
+// UpdateFaderRequest is in webserver package.
+// HTTP handlers and WebSocket handler are now in webserver package.
 
 func main() {
 	// Define command-line flags for server addresses
 	httpAddr := flag.String("http-addr", "localhost:8080", "HTTP server address (e.g., localhost:8080 or :8080)")
 	tcpAddr := flag.String("tcp-addr", "localhost:8001", "TCP server address (e.g., localhost:8001 or :8001)")
+	configPath := flag.String("config", "config.json", "Path to the configuration file")
 	flag.Parse() // Parse the command-line flags
 
-	r := mux.NewRouter()
-
-	// Middleware for logging requests
-	r.Use(loggingMiddleware)
-
-	// API routes (defined first for precedence)
-	// These handlers are now defined in http_handlers.go
-	apiRouter := r.PathPrefix("/api").Subrouter()
-	apiRouter.HandleFunc("/faders", getFadersHandler).Methods("GET")
-	apiRouter.HandleFunc("/faders/{id}", getFaderHandler).Methods("GET")
-	apiRouter.HandleFunc("/faders/{id}", updateFaderHandler).Methods("POST")
-
-	// Static file serving for assets (e.g., JS, CSS)
-	jsFileServer := http.FileServer(http.Dir("./static/js/"))
-	r.PathPrefix("/js/").Handler(http.StripPrefix("/js/", jsFileServer))
-
-	cssFileServer := http.FileServer(http.Dir("./static/css/"))
-	r.PathPrefix("/css/").Handler(http.StripPrefix("/css/", cssFileServer))
-
-	// Route for index.html at the root
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join("static", "index.html"))
-	}).Methods("GET")
-
-	// WebSocket endpoint
-	r.HandleFunc("/ws", serveWs)
+	// Create the AppServer instance
+	app, err := NewAppServer(*configPath) // NewAppServer returns (*AppServer, error)
+	if err != nil {
+		log.Fatalf("Failed to initialize AppServer: %v", err)
+	}
 
 	// Start the TCP server in a goroutine using the address from the flag
-	go StartTCPServer(*tcpAddr)
+	// StartTCPServer now accepts 'app'.
+	go StartTCPServer(*tcpAddr, app)
 
-	log.Printf("M32 Fader Control HTTP server starting on %s (serving API, static files, and WebSocket)", *httpAddr)
-	// Use the address from the flag for the HTTP server
-	log.Fatal(http.ListenAndServe(*httpAddr, r))
+	// Start the OSC client placeholder
+	go StartOSCClient(app)
+
+	// Start the HTTP server (this is a blocking call)
+	// The webserver.Start function now handles router setup, middleware, and ListenAndServe.
+	log.Printf("Starting HTTP server on %s via webserver package", *httpAddr)
+	webserver.Start(*httpAddr, app) // This will block and log if ListenAndServe fails
 }
 
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("Received HTTP request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-		next.ServeHTTP(w, r)
-	})
-}
+// loggingMiddleware has been moved to webserver/server.go
+// func loggingMiddleware(next http.Handler) http.Handler {
+// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// 		log.Printf("Received HTTP request: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+// 		next.ServeHTTP(w, r)
+// 	})
+// }

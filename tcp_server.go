@@ -13,7 +13,8 @@ import (
 )
 
 // StartTCPServer initializes and starts the TCP server on the given listenAddress.
-func StartTCPServer(listenAddress string) {
+// It now accepts an AppServer instance.
+func StartTCPServer(listenAddress string, app *AppServer) {
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		log.Fatalf("Failed to start TCP server on %s: %v", listenAddress, err)
@@ -28,23 +29,25 @@ func StartTCPServer(listenAddress string) {
 			log.Printf("Error accepting TCP connection: %v", err)
 			continue
 		}
-		go handleTCPConnection(conn)
+		// Pass the app instance to the connection handler
+		go handleTCPConnection(conn, app)
 	}
 }
 
 // handleTCPConnection manages a single client TCP connection.
-func handleTCPConnection(conn net.Conn) {
+// It now accepts an AppServer instance.
+func handleTCPConnection(conn net.Conn, app *AppServer) {
 	clientAddr := conn.RemoteAddr().String()
 	log.Printf("TCP client connected: %s", clientAddr)
 
-	// Create and subscribe a channel for fader updates
+	// Create and subscribe a channel for fader updates using app.Events
 	subChan := make(Subscriber, 10) // Buffered channel
-	FaderEvents.Subscribe(subChan)
-	log.Printf("TCP client %s subscribed to FaderEvents", clientAddr)
+	app.Events.Subscribe(subChan)
+	log.Printf("TCP client %s subscribed to FaderEvents.", clientAddr)
 
 	defer func() {
 		log.Printf("TCP client %s disconnecting, unsubscribing from FaderEvents", clientAddr)
-		FaderEvents.Unsubscribe(subChan)
+		app.Events.Unsubscribe(subChan) // Use app.Events
 		conn.Close()
 		log.Printf("TCP client %s disconnected", clientAddr)
 	}()
@@ -87,16 +90,16 @@ func handleTCPConnection(conn net.Conn) {
 
 		switch command {
 		case "LIST":
-			handleListCommand(conn)
+			handleListCommand(conn, app) // Pass app
 		case "GET":
 			if len(parts) < 2 {
 				fmt.Fprintln(conn, "ERROR: Missing fader ID for GET command. Usage: GET <fader_id>")
 				continue
 			}
 			faderID := strings.ToUpper(parts[1])
-			handleGetCommand(conn, faderID)
+			handleGetCommand(conn, faderID, app) // Pass app
 		case "SET":
-			handleSetCommand(conn, parts)
+			handleSetCommand(conn, parts, app) // Pass app
 		case "QUIT", "EXIT":
 			fmt.Fprintln(conn, "Goodbye!")
 			return // Close connection and trigger defer (which includes Unsubscribe)
@@ -118,15 +121,16 @@ func formatFader(fader *Fader) string {
 		fader.ID, fader.Name, fader.Type, fader.Level, fader.Muted)
 }
 
-func handleListCommand(conn net.Conn) {
-	if len(MasterFaderStore) == 0 {
+// handleListCommand now accepts an AppServer instance.
+func handleListCommand(conn net.Conn, app *AppServer) {
+	if len(app.Store) == 0 { // Use app.Store
 		fmt.Fprintln(conn, "No faders available.")
 		return
 	}
 
 	// 1. Collect Faders
-	faders := make([]*Fader, 0, len(MasterFaderStore))
-	for _, fader := range MasterFaderStore {
+	faders := make([]*Fader, 0, len(app.Store)) // Use app.Store
+	for _, fader := range app.Store {           // Use app.Store
 		faders = append(faders, fader)
 	}
 
@@ -134,10 +138,9 @@ func handleListCommand(conn net.Conn) {
 	typeOrder := map[string]int{
 		"Channel": 1,
 		"Bus":     2,
-		"Matrix":  3, // Changed order to match typical console layouts
-		"DCA":     4, // Changed order
+		"Matrix":  3,
+		"DCA":     4,
 		"Master":  5,
-		// Any types not in this map will be sorted by ID after types that are in the map.
 	}
 
 	// 3. Sort the Slice
@@ -145,17 +148,15 @@ func handleListCommand(conn net.Conn) {
 		orderI, okI := typeOrder[faders[i].Type]
 		orderJ, okJ := typeOrder[faders[j].Type]
 
-		// If both types are in our defined order
 		if okI && okJ {
 			if orderI != orderJ {
 				return orderI < orderJ
 			}
-		} else if okI { // Only type I is defined, so it comes first
+		} else if okI {
 			return true
-		} else if okJ { // Only type J is defined, so it comes first
+		} else if okJ {
 			return false
 		}
-		// If types are the same according to typeOrder, or if one/both are not in typeOrder, sort by ID
 		return faders[i].ID < faders[j].ID
 	})
 
@@ -167,8 +168,9 @@ func handleListCommand(conn net.Conn) {
 	fmt.Fprintln(conn, "--- End of List ---")
 }
 
-func handleGetCommand(conn net.Conn, faderID string) {
-	fader, ok := MasterFaderStore[faderID]
+// handleGetCommand now accepts an AppServer instance.
+func handleGetCommand(conn net.Conn, faderID string, app *AppServer) {
+	fader, ok := app.Store[faderID] // Use app.Store
 	if !ok {
 		fmt.Fprintf(conn, "ERROR: Fader with ID '%s' not found\n", faderID)
 		return
@@ -176,7 +178,8 @@ func handleGetCommand(conn net.Conn, faderID string) {
 	fmt.Fprintln(conn, formatFader(fader))
 }
 
-func handleSetCommand(conn net.Conn, parts []string) {
+// handleSetCommand now accepts an AppServer instance.
+func handleSetCommand(conn net.Conn, parts []string, app *AppServer) {
 	if len(parts) < 4 {
 		fmt.Fprintln(conn, "ERROR: Invalid SET command format. Usage: SET <id> (LEVEL <value> | MUTE <ON|OFF>)")
 		return
@@ -186,7 +189,7 @@ func handleSetCommand(conn net.Conn, parts []string) {
 	property := strings.ToUpper(parts[2])
 	valueStr := parts[3]
 
-	fader, ok := MasterFaderStore[faderID]
+	fader, ok := app.Store[faderID] // Use app.Store
 	if !ok {
 		fmt.Fprintf(conn, "ERROR: Fader with ID '%s' not found for SET command\n", faderID)
 		return
@@ -205,7 +208,7 @@ func handleSetCommand(conn net.Conn, parts []string) {
 		}
 		fader.Level = level
 		log.Printf("TCP SET: Fader %s level set to %.1f dB by client %s", faderID, level, conn.RemoteAddr().String())
-		FaderEvents.Publish(fader)
+		app.Events.Publish(fader) // Use app.Events
 		fmt.Fprintf(conn, "OK: Fader %s level set to %.1f dB\n", faderID, level)
 		fmt.Fprintln(conn, formatFader(fader))
 
@@ -222,7 +225,7 @@ func handleSetCommand(conn net.Conn, parts []string) {
 		}
 		fader.Muted = newMuteState
 		log.Printf("TCP SET: Fader %s mute set to %t by client %s", faderID, newMuteState, conn.RemoteAddr().String())
-		FaderEvents.Publish(fader)
+		app.Events.Publish(fader) // Use app.Events
 		fmt.Fprintf(conn, "OK: Fader %s mute set to %t\n", faderID, newMuteState)
 		fmt.Fprintln(conn, formatFader(fader))
 

@@ -30,39 +30,36 @@ type AppConfig struct {
 	DefaultMuted bool                `json:"defaultMuted"`
 }
 
-// MasterFaderStore holds all the faders available on the console.
-// The key is the Fader.ID.
-var MasterFaderStore map[string]*Fader
+// MasterFaderStore is no longer a global variable.
+// var MasterFaderStore map[string]*Fader
 
-func init() {
-	MasterFaderStore = make(map[string]*Fader)
+// NewFaderStore creates and returns a new fader store, initialized from the given config file.
+func NewFaderStore(configPath string) (map[string]*Fader, error) {
+	store := make(map[string]*Fader)
 
 	// Read config.json
-	configFile := "config.json"
-	fileBytes, err := os.ReadFile(configFile)
+	fileBytes, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("Error reading config file '%s': %v", configFile, err)
+		return nil, fmt.Errorf("error reading config file '%s': %w", configPath, err)
 	}
 
 	// Parse JSON
 	var appConfig AppConfig
 	err = json.Unmarshal(fileBytes, &appConfig)
 	if err != nil {
-		log.Fatalf("Error parsing config file '%s': %v", configFile, err)
+		return nil, fmt.Errorf("error parsing config file '%s': %w", configPath, err)
 	}
 
-	log.Printf("Successfully loaded configuration from %s", configFile)
+	log.Printf("Successfully loaded configuration from %s", configPath)
 
-	// Populate MasterFaderStore from appConfig.FaderTypes
+	// Populate store from appConfig.FaderTypes
 	for _, ft := range appConfig.FaderTypes {
 		log.Printf("Loading fader type: %s (Count: %d)", ft.Type, ft.Count)
 		for i := 1; i <= ft.Count; i++ {
 			id := fmt.Sprintf("%s%02d", ft.IDPrefix, i)
-			// Ensure ID is uppercase for consistency with how it might be looked up (e.g. from URL params)
-			// id = strings.ToUpper(id) // Decided against this for now, to match exact config.json format.
 			name := fmt.Sprintf("%s%d", ft.NamePrefix, i)
 
-			MasterFaderStore[id] = &Fader{
+			store[id] = &Fader{
 				ID:    id,
 				Name:  name,
 				Type:  ft.Type,
@@ -72,12 +69,11 @@ func init() {
 		}
 	}
 
-	// Populate MasterFaderStore from appConfig.MasterFaders
+	// Populate store from appConfig.MasterFaders
 	for _, mf := range appConfig.MasterFaders {
 		log.Printf("Loading master fader: %s (ID: %s)", mf.Name, mf.ID)
-		// id := strings.ToUpper(mf.ID) // Consistent ID handling
 		id := mf.ID
-		MasterFaderStore[id] = &Fader{
+		store[id] = &Fader{
 			ID:    id,
 			Name:  mf.Name,
 			Type:  mf.Type,
@@ -85,5 +81,6 @@ func init() {
 			Muted: appConfig.DefaultMuted,
 		}
 	}
-	log.Printf("MasterFaderStore initialized with %d faders from config.", len(MasterFaderStore))
+	log.Printf("Fader store initialized with %d faders from config.", len(store))
+	return store, nil
 }
