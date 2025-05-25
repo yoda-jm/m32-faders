@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"sort" // Added for sorting
 	"strconv"
 	"strings"
 	"time"
@@ -56,8 +57,6 @@ func handleTCPConnection(conn net.Conn) {
 				_, err := fmt.Fprintln(conn, updateMsg)
 				if err != nil {
 					log.Printf("TCP Update: Error writing update to client %s: %v. Update goroutine exiting.", clientAddr, err)
-					// The main connection handler will likely also detect the error and close the connection,
-					// triggering the defer block which includes Unsubscribe.
 					return
 				}
 				log.Printf("TCP Update: Sent update for fader %s to client %s", update.ID, clientAddr)
@@ -104,8 +103,6 @@ func handleTCPConnection(conn net.Conn) {
 		default:
 			fmt.Fprintf(conn, "ERROR: Unknown command '%s'\n", parts[0])
 		}
-		// A small delay was here, but it might not be necessary anymore with blocking I/O
-		// and a dedicated goroutine for updates. Keeping it for now.
 		time.Sleep(50 * time.Millisecond)
 	}
 
@@ -126,8 +123,45 @@ func handleListCommand(conn net.Conn) {
 		fmt.Fprintln(conn, "No faders available.")
 		return
 	}
-	fmt.Fprintln(conn, "--- Fader List ---")
+
+	// 1. Collect Faders
+	faders := make([]*Fader, 0, len(MasterFaderStore))
 	for _, fader := range MasterFaderStore {
+		faders = append(faders, fader)
+	}
+
+	// 2. Define Sort Order for Types
+	typeOrder := map[string]int{
+		"Channel": 1,
+		"Bus":     2,
+		"Matrix":  3, // Changed order to match typical console layouts
+		"DCA":     4, // Changed order
+		"Master":  5,
+		// Any types not in this map will be sorted by ID after types that are in the map.
+	}
+
+	// 3. Sort the Slice
+	sort.Slice(faders, func(i, j int) bool {
+		orderI, okI := typeOrder[faders[i].Type]
+		orderJ, okJ := typeOrder[faders[j].Type]
+
+		// If both types are in our defined order
+		if okI && okJ {
+			if orderI != orderJ {
+				return orderI < orderJ
+			}
+		} else if okI { // Only type I is defined, so it comes first
+			return true
+		} else if okJ { // Only type J is defined, so it comes first
+			return false
+		}
+		// If types are the same according to typeOrder, or if one/both are not in typeOrder, sort by ID
+		return faders[i].ID < faders[j].ID
+	})
+
+	// 4. Iterate and Print
+	fmt.Fprintln(conn, "--- Fader List (Sorted) ---")
+	for _, fader := range faders {
 		fmt.Fprintln(conn, formatFader(fader))
 	}
 	fmt.Fprintln(conn, "--- End of List ---")

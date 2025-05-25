@@ -1,6 +1,7 @@
 $(document).ready(function() {
     let allFaders = [];
     let currentFaderId = null;
+    let socket = null; // Declare socket variable in a broader scope
 
     // Initial UI State
     $('#fader-slider').prop('disabled', true);
@@ -18,7 +19,7 @@ $(document).ready(function() {
             return;
         }
 
-        currentFaderId = faderData.ID;
+        currentFaderId = faderData.ID; // Update currentFaderId when a fader is displayed
         $('#selected-fader-name').text(`${faderData.Name} (${faderData.ID})`);
         $('#fader-slider').val(faderData.Level).prop('disabled', false);
         $('#fader-db-value').text(`${parseFloat(faderData.Level).toFixed(1)} dB`);
@@ -36,8 +37,8 @@ $(document).ready(function() {
         method: 'GET',
         dataType: 'json',
         success: function(data) {
-            allFaders = data;
-            let faderTypes = ['All']; // Add 'All' as an option
+            allFaders = data; // Initialize allFaders
+            let faderTypes = ['All'];
             let types = new Set(allFaders.map(fader => fader.Type));
             types.forEach(type => faderTypes.push(type));
             
@@ -56,7 +57,6 @@ $(document).ready(function() {
         },
         error: function(jqXHR, textStatus, errorThrown) {
             console.error('Error fetching faders:', textStatus, errorThrown);
-            // Potentially display an error to the user
         }
     });
 
@@ -68,7 +68,7 @@ $(document).ready(function() {
             disabled: true,
             text: 'Select Item...'
         })).prop('disabled', true);
-        updateFaderUI(null); // Reset fader display
+        updateFaderUI(null); 
 
         if (!selectedType || selectedType === "Select Type...") {
             return;
@@ -79,7 +79,7 @@ $(document).ready(function() {
             : allFaders.filter(fader => fader.Type === selectedType);
 
         if (filteredFaders.length > 0) {
-            filteredFaders.sort((a, b) => a.ID.localeCompare(b.ID)); // Sort for consistent order
+            filteredFaders.sort((a, b) => a.ID.localeCompare(b.ID));
             filteredFaders.forEach(function(fader) {
                 $('#fader-item-select').append($('<option>', {
                     value: fader.ID,
@@ -108,7 +108,6 @@ $(document).ready(function() {
             error: function(jqXHR, textStatus, errorThrown) {
                 console.error(`Error fetching fader ${faderId}:`, textStatus, errorThrown);
                 updateFaderUI(null);
-                // Potentially display an error message to the user
             }
         });
     });
@@ -119,7 +118,6 @@ $(document).ready(function() {
         $('#fader-db-value').text(`${newLevel.toFixed(1)} dB`);
 
         if (currentFaderId) {
-            // Debounce or throttle this if performance becomes an issue
             $.ajax({
                 url: `/api/faders/${currentFaderId}`,
                 method: 'POST',
@@ -128,12 +126,9 @@ $(document).ready(function() {
                 dataType: 'json',
                 success: function(updatedFader) {
                     // console.log(`Fader ${currentFaderId} level updated to ${updatedFader.Level}`);
-                    // Optionally, re-update UI strictly from server response if needed
-                    // updateFaderUI(updatedFader); // Can cause slider jitter if not careful
                 },
                 error: function(jqXHR, textStatus, errorThrown) {
                     console.error(`Error updating fader ${currentFaderId} level:`, textStatus, errorThrown);
-                    // Potentially revert slider or notify user
                 }
             });
         }
@@ -143,7 +138,7 @@ $(document).ready(function() {
     $('#mute-button').on('click', function() {
         if (!currentFaderId) return;
 
-        const isCurrentlyMuted = $(this).hasClass('btn-success'); // If it has btn-success, it means it's showing "Unmute"
+        const isCurrentlyMuted = $(this).hasClass('btn-success'); 
         const newMuteState = !isCurrentlyMuted;
 
         $.ajax({
@@ -153,13 +148,68 @@ $(document).ready(function() {
             data: JSON.stringify({ muted: newMuteState }),
             dataType: 'json',
             success: function(updatedFader) {
-                // console.log(`Fader ${currentFaderId} mute state updated to ${updatedFader.Muted}`);
-                updateFaderUI(updatedFader); // Update UI with server response
+                updateFaderUI(updatedFader); 
             },
             error: function(jqXHR, textStatus, errorThrown) {
                 console.error(`Error updating fader ${currentFaderId} mute state:`, textStatus, errorThrown);
-                // Potentially notify user
             }
         });
     });
+
+    // --- WebSocket Implementation ---
+    function connectWs() {
+        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+        
+        console.log("Attempting to connect to WebSocket:", wsUrl);
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = function(event) {
+            console.log("WebSocket connection established.");
+        };
+
+        socket.onmessage = function(event) {
+            console.log("WebSocket message received:", event.data);
+            try {
+                const faderData = JSON.parse(event.data);
+
+                if (faderData && faderData.ID) {
+                    // Optional Enhancement: Update allFaders array
+                    let existingFader = allFaders.find(f => f.ID === faderData.ID);
+                    if (existingFader) {
+                        Object.assign(existingFader, faderData);
+                        // console.log("Updated fader in allFaders:", faderData.ID);
+                    } else {
+                        // If fader is not in allFaders (e.g. dynamically added on server),
+                        // you might want to add it or handle it differently.
+                        // For now, we just log this case.
+                        // console.log("Received update for fader not initially in allFaders:", faderData.ID);
+                    }
+                    
+                    // Update UI if the received fader data is for the currently selected fader
+                    if (faderData.ID === currentFaderId) {
+                        console.log("Updating current fader UI for ID:", faderData.ID);
+                        updateFaderUI(faderData);
+                    }
+                } else {
+                    console.warn("Received invalid fader data from WebSocket:", faderData);
+                }
+            } catch (e) {
+                console.error("Error parsing WebSocket message JSON:", e);
+            }
+        };
+
+        socket.onerror = function(event) {
+            console.error("WebSocket error:", event);
+        };
+
+        socket.onclose = function(event) {
+            console.log("WebSocket connection closed. Code:", event.code, "Reason:", event.reason);
+            console.log("Attempting to reconnect WebSocket in 5 seconds...");
+            setTimeout(connectWs, 5000); // Attempt to reconnect
+        };
+    }
+
+    // Call connectWs to establish the WebSocket connection after initial setup
+    connectWs();
 });

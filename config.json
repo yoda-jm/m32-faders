@@ -1,0 +1,37 @@
+{
+  "faderTypes": [
+    {
+      "type": "Channel",
+      "count": 32,
+      "idPrefix": "CH",
+      "namePrefix": "Channel "
+    },
+    {
+      "type": "Bus",
+      "count": 16,
+      "idPrefix": "BUS",
+      "namePrefix": "Bus "
+    },
+    {
+      "type": "Matrix",
+      "count": 6,
+      "idPrefix": "MTX",
+      "namePrefix": "Matrix "
+    },
+    {
+      "type": "DCA",
+      "count": 8,
+      "idPrefix": "DCA",
+      "namePrefix": "DCA "
+    }
+  ],
+  "masterFaders": [
+    {
+      "type": "Master",
+      "id": "MAINLR",
+      "name": "Main LR"
+    }
+  ],
+  "defaultLevel": 0.0,
+  "defaultMuted": false
+}
