@@ -41,7 +41,8 @@ $(document).ready(function() {
         success: function(data) {
             allFaders = data; // `data` is an array of objects with lowercase 'id'
             let faderTypes = ['All'];
-            let types = new Set(allFaders.map(fader => fader.Type));
+            // Filter out empty or whitespace-only types before creating the Set
+            let types = new Set(allFaders.map(fader => fader.Type).filter(type => type && type.trim() !== ""));
             types.forEach(type => faderTypes.push(type));
             
             $('#fader-type-select').empty().append($('<option>', {
