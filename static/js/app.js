@@ -181,6 +181,17 @@ $(document).ready(function() {
         });
     });
 
+    // 6. Reset Fader Level to 0dB on Double-Click
+    $('#fader-slider').on('dblclick', function() {
+        if (currentFaderId) {
+            console.log("Fader slider double-clicked for ID:", currentFaderId, "- resetting to 0dB.");
+            $(this).val(0);      // Set the slider's value to 0
+            $(this).trigger('input'); // Trigger the 'input' event to update display and send AJAX
+        } else {
+            console.log("Fader slider double-clicked, but no fader selected.");
+        }
+    });
+
     // --- WebSocket Implementation ---
     function connectWs() {
         const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";

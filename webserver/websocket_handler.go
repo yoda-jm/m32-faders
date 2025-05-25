@@ -19,32 +19,36 @@ var upgrader = websocket.Upgrader{
 
 // serveWs now accepts *core.AppServer.
 func serveWs(app *core.AppServer) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) { // This is the main handler goroutine
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Printf("WebSocket: Failed to upgrade connection for client %s: %v", r.RemoteAddr, err)
 			return
 		}
-		clientAddr := conn.RemoteAddr().String() // Get client address string once
+		clientAddr := conn.RemoteAddr().String()
 		log.Printf("WebSocket: Client %s connected.", clientAddr)
 
+		subChan := make(core.Subscriber, 10) // Use core.Subscriber
+		app.Events.Subscribe(subChan)
+		log.Printf("WebSocket: Client %s subscribed to FaderEvents.", clientAddr)
+
+		// This single defer in the main handler goroutine handles all cleanup.
 		defer func() {
-			log.Printf("WebSocket: Closing connection for client %s.", clientAddr)
+			log.Printf("WebSocket: Handler for client %s ending. Unsubscribing and closing connection.", clientAddr)
+			app.Events.Unsubscribe(subChan)
 			conn.Close()
 		}()
 
-		subChan := make(core.Subscriber, 10) // Use core.Subscriber
-		app.Events.Subscribe(subChan)        // app.Events is *core.Publisher
-		log.Printf("WebSocket: Client %s subscribed to FaderEvents.", clientAddr)
-
-		// Goroutine to send fader updates to the client
+		// Write Goroutine
 		go func() {
 			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("WebSocket: Recovered from panic in write loop for client %s: %v", clientAddr, r)
+				if rcv := recover(); rcv != nil { // Changed variable name from r to rcv to avoid conflict
+					log.Printf("WebSocket: Recovered from panic in write loop for client %s: %v", clientAddr, rcv)
 				}
-				log.Printf("WebSocket: Write loop for client %s ended. Unsubscribing.", clientAddr)
-				app.Events.Unsubscribe(subChan) // app.Events is *core.Publisher
+				log.Printf("WebSocket: Write loop for client %s ended.", clientAddr)
+				// Note: No explicit Unsubscribe or conn.Close() here; main defer handles it.
+				// If WriteJSON fails, it calls conn.Close() which terminates the read loop,
+				// triggering the main defer.
 			}()
 
 			for update := range subChan { // update is of type core.FaderUpdate (*core.Fader)
@@ -52,43 +56,36 @@ func serveWs(app *core.AppServer) http.HandlerFunc {
 					log.Printf("WebSocket: Received nil update for client %s. Skipping.", clientAddr)
 					continue
 				}
-				// Added detailed log before sending
 				log.Printf("WebSocket: Attempting to send update to client %s for fader %s: %+v", clientAddr, update.ID, update)
-				err := conn.WriteJSON(update) // update is *core.Fader
-				if err != nil {
-					log.Printf("WebSocket: Error writing JSON update to client %s: %v", clientAddr, err)
-					return // Exit goroutine, defer will handle unsubscription
+				if err := conn.WriteJSON(update); err != nil {
+					log.Printf("WebSocket: Error writing JSON update to client %s: %v. Closing connection.", clientAddr, err)
+					// Closing the connection here will cause the read loop in the main handler goroutine to fail and exit,
+					// which in turn triggers the main defer cleanup.
+					conn.Close() 
+					return // Exit write goroutine
 				}
 			}
-			log.Printf("WebSocket: FaderEvents channel closed for client %s. Write loop exiting.", clientAddr)
 		}()
 
-		// Goroutine to read messages from the client (primarily to detect disconnections)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("WebSocket: Recovered from panic in read loop for client %s: %v", clientAddr, r)
+		// Read Loop (runs in the main handler goroutine, blocking it)
+		log.Printf("WebSocket: Starting read loop for client %s.", clientAddr)
+		for {
+			messageType, p, err := conn.ReadMessage()
+			if err != nil {
+				// Log appropriately based on the type of error
+				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNoStatusReceived) {
+					log.Printf("WebSocket: Error reading message from client %s (unexpected close): %v", clientAddr, err)
+				} else {
+					// This includes normal closures from client (e.g. browser tab closed) or "use of closed network connection"
+					// if the write goroutine closed the connection due to a write error.
+					log.Printf("WebSocket: Client %s disconnected or read error: %v", clientAddr, err)
 				}
-				log.Printf("WebSocket: Read loop for client %s ended. Unsubscribing and closing connection.", clientAddr)
-				app.Events.Unsubscribe(subChan) // app.Events is *core.Publisher
-				conn.Close()                     // Ensure connection is closed if read loop exits
-			}()
-
-			for {
-				messageType, p, err := conn.ReadMessage()
-				if err != nil {
-					if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNoStatusReceived) {
-						log.Printf("WebSocket: Error reading message from client %s (unexpected close): %v", clientAddr, err)
-					} else {
-						// Normal closure (e.g., client called socket.close() or browser tab closed)
-						// or other read error that implies disconnection.
-						log.Printf("WebSocket: Client %s disconnected or read error: %v", clientAddr, err)
-					}
-					break // Exit loop on any error, triggering deferred cleanup
-				}
-				log.Printf("WebSocket: Received message type %d from client %s: %s", messageType, clientAddr, string(p))
-				// No specific client messages are handled in this application yet.
+				break // Exit read loop, which will lead to deferred cleanup in this main handler goroutine.
 			}
-		}()
+			log.Printf("WebSocket: Received message type %d from client %s: %s", messageType, clientAddr, string(p))
+			// Process client messages here if needed in the future.
+		}
+		// When the read loop breaks, this function (the HTTP handler) will exit,
+		// and its deferred cleanup will run.
 	}
 }
