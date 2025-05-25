@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M32 Fader Control</title>
+    <!-- Bootstrap CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-GLhlTQ8iRABdZLl6O3oVMWSktQOp6b7In1Zl3/Jr59b6EGGoI1aFkw7cmDA6j6gD" crossorigin="anonymous">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <header class="mb-4">
+            <h1 class="display-4">M32 Fader Control</h1>
+        </header>
+
+        <div id="channel-selection-area" class="row mb-4">
+            <div class="col-md-4">
+                <label for="fader-type-select" class="form-label">Fader Type</label>
+                <select class="form-select" id="fader-type-select">
+                    <option selected disabled>Select Type...</option>
+                    <!-- Options will be populated by JS, or can be hardcoded if static -->
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="fader-item-select" class="form-label">Fader Item/Name</label>
+                <select class="form-select" id="fader-item-select">
+                    <option selected disabled>Select Item...</option>
+                    <!-- Options will be populated by JS based on fader type selection -->
+                </select>
+            </div>
+        </div>
+
+        <hr/>
+
+        <div id="fader-display-area" class="mt-4">
+            <h2 id="selected-fader-name" class="mb-3">No Fader Selected</h2>
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <label for="fader-slider" class="form-label">Level (-90dB to +10dB)</label>
+                    <input type="range" class="form-range" id="fader-slider" min="-90" max="10" step="0.5" value="0">
+                </div>
+                <div class="col-md-2">
+                    <span id="fader-db-value" class="badge bg-secondary p-2" style="font-size: 1.2rem;">0.0 dB</span>
+                </div>
+                <div class="col-md-2 d-grid">
+                    <button class="btn btn-danger btn-lg" id="mute-button">Mute</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.6.0.slim.min.js" integrity="sha256-u7e5khyithlIdTpu22PHhENmPcRdFiHRjhAuHcs05RI=" crossorigin="anonymous"></script>
+    <!-- Bootstrap JS Bundle CDN (includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js" integrity="sha384-w76AqPfDkMBDXo30jS1Sgez6pr3x5MlQ1ZAGC+nuZB+EYdgRZgiwxhTBTkF7CXvN" crossorigin="anonymous"></script>
+    <!-- Custom JS -->
+    <script src="js/app.js"></script>
+</body>
+</html>
