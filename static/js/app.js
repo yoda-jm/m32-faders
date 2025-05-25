@@ -227,11 +227,33 @@ $(document).ready(function() {
     });
 
     // 6. Reset Fader Level to 0dB on Double-Click
-    $('#fader-slider').on('dblclick', function() {
+    $('#fader-slider').on('dblclick', function(event) { // Added event parameter
+        event.preventDefault(); // Prevent default double-click behavior
+
         if (currentFaderId) {
             console.log("Fader slider double-clicked for ID:", currentFaderId, "- resetting to 0dB.");
-            $(this).val(0);      
-            $(this).trigger('input'); 
+            const newLevel = 0.0;
+            $(this).val(newLevel); // Set the slider's value to 0
+            $('#fader-db-value').text(newLevel.toFixed(1) + ' dB'); // Directly update dB display
+
+            // Directly send AJAX POST request
+            $.ajax({
+                url: `/api/faders/${currentFaderId}`,
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ level: newLevel }),
+                dataType: 'json',
+                success: function(updatedFaderFromServer) {
+                    console.log(`Fader ${currentFaderId} level successfully reset to 0dB via dblclick.`);
+                    // WebSocket update should handle UI consistency if other clients are involved
+                    // or if server modifies the value further.
+                    // For immediate feedback, current UI update is already done.
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.error(`Error resetting fader ${currentFaderId} level to 0dB:`, textStatus, errorThrown);
+                    // Consider reverting UI or notifying user if the update fails
+                }
+            });
         } else {
             console.log("Fader slider double-clicked, but no fader selected.");
         }
