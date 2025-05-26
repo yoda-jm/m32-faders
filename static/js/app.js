@@ -2,6 +2,7 @@ $(document).ready(function() {
     let allFaders = []; // Expects items with lowercase 'id', 'name', 'type' from /api/faders
     let currentFaderId = null; // Will store lowercase 'id'
     let socket = null;
+    let isDoubleClickResetting = false; // Flag for double-click reset
 
     // Define Type Sort Order
     const faderTypeSortOrder = {
@@ -168,7 +169,7 @@ $(document).ready(function() {
             success: function(faderDataFromServer) {
                 const normalizedFaderData = {
                     id: faderDataFromServer.ID, 
-                    Name: faderDataFromServer.Name, // Keep Name, Type, Level, Muted as is from full object
+                    Name: faderDataFromServer.Name, 
                     Type: faderDataFromServer.Type,
                     Level: faderDataFromServer.Level,
                     Muted: faderDataFromServer.Muted
@@ -184,6 +185,11 @@ $(document).ready(function() {
 
     // 4. Update Fader Level (On Slider Input)
     $('#fader-slider').on('input', function() {
+        if (isDoubleClickResetting) {
+            // console.log("Input event ignored due to double-click reset in progress.");
+            return; 
+        }
+
         const newLevel = parseFloat($(this).val());
         $('#fader-db-value').text(`${newLevel.toFixed(1)} dB`);
 
@@ -227,16 +233,16 @@ $(document).ready(function() {
     });
 
     // 6. Reset Fader Level to 0dB on Double-Click
-    $('#fader-slider').on('dblclick', function(event) { // Added event parameter
-        event.preventDefault(); // Prevent default double-click behavior
+    $('#fader-slider').on('dblclick', function(event) { 
+        isDoubleClickResetting = true; // Set flag at the beginning
+        event.preventDefault(); 
 
         if (currentFaderId) {
             console.log("Fader slider double-clicked for ID:", currentFaderId, "- resetting to 0dB.");
             const newLevel = 0.0;
-            $(this).val(newLevel); // Set the slider's value to 0
-            $('#fader-db-value').text(newLevel.toFixed(1) + ' dB'); // Directly update dB display
+            $(this).val(newLevel); 
+            $('#fader-db-value').text(newLevel.toFixed(1) + ' dB'); 
 
-            // Directly send AJAX POST request
             $.ajax({
                 url: `/api/faders/${currentFaderId}`,
                 method: 'POST',
@@ -245,17 +251,18 @@ $(document).ready(function() {
                 dataType: 'json',
                 success: function(updatedFaderFromServer) {
                     console.log(`Fader ${currentFaderId} level successfully reset to 0dB via dblclick.`);
-                    // WebSocket update should handle UI consistency if other clients are involved
-                    // or if server modifies the value further.
-                    // For immediate feedback, current UI update is already done.
                 },
                 error: function(jqXHR, textStatus, errorThrown) {
                     console.error(`Error resetting fader ${currentFaderId} level to 0dB:`, textStatus, errorThrown);
-                    // Consider reverting UI or notifying user if the update fails
                 }
             });
+            
+            setTimeout(() => { // Reset flag after a short delay
+                isDoubleClickResetting = false;
+            }, 50);
         } else {
             console.log("Fader slider double-clicked, but no fader selected.");
+            isDoubleClickResetting = false; // Reset flag even if no action taken
         }
     });
 
@@ -276,9 +283,9 @@ $(document).ready(function() {
             try {
                 const faderDataFromServer = JSON.parse(event.data);
                 
-                const faderData = { // Normalized data with lowercase 'id'
+                const faderData = { 
                     id: faderDataFromServer.ID, 
-                    Name: faderDataFromServer.Name, // Keep Name, Type, Level, Muted as is from full object
+                    Name: faderDataFromServer.Name, 
                     Type: faderDataFromServer.Type,
                     Level: faderDataFromServer.Level,
                     Muted: faderDataFromServer.Muted
@@ -287,20 +294,9 @@ $(document).ready(function() {
                 if (faderData && faderData.id) { 
                     let existingFaderIndex = allFaders.findIndex(f => f.id === faderData.id);
                     if (existingFaderIndex !== -1) {
-                        // Update the allFaders item. Note: allFaders items from /api/faders
-                        // only have id, name, type. WebSocket gives full object.
-                        // We merge to preserve original list structure if needed, but update with new full data.
                         allFaders[existingFaderIndex] = {
-                            ...allFaders[existingFaderIndex], // existing item has {id, name, type}
-                            Name: faderData.Name, // Update name if it changed
-                            Type: faderData.Type, // Update type if it changed
-                            // Add Level and Muted if we want allFaders to store full state
-                            // For now, allFaders list items are just {id, name, type}
-                            // So, we might only update what's there:
-                            // allFaders[existingFaderIndex].name = faderData.Name;
-                            // allFaders[existingFaderIndex].type = faderData.Type;
-                            // Or, if we want allFaders to be a cache of full objects:
-                             ...faderData
+                            ...allFaders[existingFaderIndex], 
+                            ...faderData 
                         };
                     }
                     
